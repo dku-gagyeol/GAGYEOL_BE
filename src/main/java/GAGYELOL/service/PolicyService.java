@@ -120,6 +120,12 @@ public class PolicyService {
 
         log.info("RAG 인덱싱 완료 - policyId={}, 청크 수={}", policy.getId(), chunks.size());
 
+        // 6. 그룹의 활성 규정책으로 지정 (가장 최근 업로드한 규정책이 증빙 분석·양식지 분석에 사용됨)
+        if (group != null) {
+            group.updateActivePolicy(policy);
+            log.info("그룹 활성 규정책 지정 - groupId={}, policyId={}", group.getId(), policy.getId());
+        }
+
         return PolicyUploadResponse.builder()
                 .policyId(policy.getId())
                 .policyName(policyName)
@@ -149,7 +155,20 @@ public class PolicyService {
                 .orElseThrow(() -> new IllegalArgumentException("규정책을 찾을 수 없습니다."));
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
-        if (policy.getGroup() != null) groupService.assertMaxRole(user, policy.getGroup());
+        GAGYELOL.entity.UserGroup group = policy.getGroup();
+        if (group != null) {
+            groupService.assertMaxRole(user, group);
+            // 삭제 대상이 활성 규정책이면 남은 규정책 중 가장 최근 것으로 교체 (없으면 해제)
+            if (group.getActivePolicy() != null && group.getActivePolicy().getId().equals(policyId)) {
+                Policy next = policyRepository.findByGroup(group).stream()
+                        .filter(p -> !p.getId().equals(policyId))
+                        .max(java.util.Comparator.comparing(Policy::getId))
+                        .orElse(null);
+                group.updateActivePolicy(next);
+                groupRepository.flush();
+                log.info("활성 규정책 교체 - groupId={}, {} -> {}", group.getId(), policyId, next != null ? next.getId() : null);
+            }
+        }
         vectorStore.deleteByPolicyId(policyId);
         policyRepository.delete(policy);
         log.info("규정책 삭제 완료 - policyId={}", policyId);

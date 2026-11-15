@@ -73,8 +73,8 @@ public class FormService {
         }
         log.info("텍스트 추출 완료 - {}자", text.length());
 
-        // 3. 규정책 RAG 검색 (policyId가 있는 경우)
-        String policyChunks = searchPolicyChunks(text, policyId);
+        // 3. 규정책 RAG 검색 (policyId 미전달 시 그룹의 활성 규정책 사용)
+        String policyChunks = searchPolicyChunks(text, resolvePolicyId(policyId, group));
 
         // 4. GPT로 양식지 분석 (규정 내용 포함)
         String analysisJson = formAiService.analyzeForm(text, policyChunks);
@@ -141,8 +141,8 @@ public class FormService {
         }
         log.info("재분석 텍스트 추출 완료 - {}자", text.length());
 
-        // 규정책 RAG 검색
-        String policyChunks = searchPolicyChunks(text, policyId);
+        // 규정책 RAG 검색 (policyId 미전달 시 그룹의 활성 규정책 사용)
+        String policyChunks = searchPolicyChunks(text, resolvePolicyId(policyId, form.getGroup()));
 
         // 규정 내용 포함해서 재분석
         String analysisJson = formAiService.analyzeForm(text, policyChunks);
@@ -296,6 +296,13 @@ public class FormService {
                 .generatedFields(generatedFieldList)
                 .createdAt(form.getCreatedAt())
                 .build();
+    }
+
+    /** 명시적으로 전달된 policyId 우선, 없으면 그룹의 활성 규정책 ID. 둘 다 없으면 null. */
+    private Long resolvePolicyId(Long policyId, GAGYELOL.entity.UserGroup group) {
+        if (policyId != null) return policyId;
+        if (group != null && group.getActivePolicy() != null) return group.getActivePolicy().getId();
+        return null;
     }
 
     private String searchPolicyChunks(String text, Long policyId) {
